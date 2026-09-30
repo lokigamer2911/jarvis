@@ -43,6 +43,13 @@ next-env.d.ts
 # freebuff internal
 .freebuff/
 
+# recon scan output (runtime artifacts, not source)
+recon_*/
+recon-output/
+
+# dev server logs
+dev-server*.log
+
 # electron build artifacts
 electron/dist/
 
