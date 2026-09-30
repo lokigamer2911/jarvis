@@ -33,6 +33,10 @@ import {
   threeViewSVG, exportDXF, modelBOM, downloadText,
 } from '@/lib/cad-drawing';
 import { generateSparks, seedFromString, type Spark } from '@/lib/invent';
+import {
+  cadModel$, cadPresentation$, cadExplode$, cadSection$, cadBuildProgress$,
+  type CadPresentation,
+} from '@/lib/module-store';
 
 // ── Types (mirror of the /api/hardware response) ────────────────
 
@@ -177,6 +181,11 @@ export default function BuildStudio({ isOpen, onClose }: Props) {
   const [sparkSeed, setSparkSeed] = useState(() => seedFromString('jarvis'));
   const [activeSpark, setActiveSpark] = useState<string | null>(null);
 
+  // ── V2 presentation state (drives the persistent-world model) ──
+  const [presentation, setPresentation] = useState<CadPresentation>('realistic');
+  const [explode, setExplode] = useState(false);
+  const [section, setSection] = useState(false);
+
   const [electronics, setElectronics] = useState<HardwareResult | null>(null);
   const [elecLoading, setElecLoading] = useState(false);
   const [elecError, setElecError] = useState('');
@@ -192,6 +201,30 @@ export default function BuildStudio({ isOpen, onClose }: Props) {
 
   const stats = useMemo(() => modelStats(model), [model]);
   const sparks = useMemo(() => generateSparks(sparkSeed, 2), [sparkSeed]);
+
+  // Mirror model + presentation into the world stores (persistent 3D env)
+  useEffect(() => { cadModel$.set(model); }, [model]);
+  useEffect(() => { cadPresentation$.set(presentation); }, [presentation]);
+  useEffect(() => { cadExplode$.set(explode ? 1 : 0); }, [explode]);
+  useEffect(() => { cadSection$.set(section ? 0.5 : 0.98); }, [section]);
+  // Construction animation runs on each new model — wireframe → geometry
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      cadBuildProgress$.set(1);
+      return;
+    }
+    cadBuildProgress$.set(0);
+    const start = performance.now();
+    let raf = 0;
+    const step = () => {
+      const p = Math.min(1, (performance.now() - start) / 1400);
+      cadBuildProgress$.set(p);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [model]);
 
   const powers: PowerRow[] = useMemo(
     () => electronics?.analysis.wiring.powerRequirements ?? [],
@@ -338,6 +371,18 @@ export default function BuildStudio({ isOpen, onClose }: Props) {
                 <button key={d} onClick={() => setDuty(d)}
                   className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-wide transition ${duty === d ? 'bg-[rgba(255,90,31,0.12)] text-[color:var(--accent)]' : 'text-[color:var(--t3)] hover:text-[color:var(--t2)]'}`}>
                   {d}
+                </button>
+              ))}
+            </div>
+            {/* Presentation modes — the transition itself communicates the change */}
+            <div className="hidden lg:flex rounded-full border p-0.5" style={{ borderColor: 'var(--line)' }}>
+              {(['realistic', 'wireframe', 'technical', 'xray', 'exploded', 'section', 'blueprint'] as CadPresentation[]).map(m => (
+                <button key={m} onClick={() => { setPresentation(m); setExplode(m === 'exploded'); setSection(m === 'section'); }}
+                  title={`Presentation: ${m}`}
+                  className={`rounded-full px-2.5 py-1 text-[10px] capitalize transition ${presentation === m
+                    ? 'bg-[var(--accent-soft)] text-[color:var(--t1)]'
+                    : 'text-[color:var(--t3)] hover:text-[color:var(--t2)]'}`}>
+                  {m}
                 </button>
               ))}
             </div>

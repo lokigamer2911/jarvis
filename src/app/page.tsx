@@ -16,14 +16,15 @@ import ComputerUseConsole from '@/components/ComputerUseConsole';
 import { VoiceDiagnosticsButton } from '@/components/VoiceDiagnostics';
 import { Mark3D } from '@/components/Holo3D';
 import { STATE_LABELS, AssistantState } from '@/lib/assistant-state';
+import { worldState, useWorldState } from '@/lib/scene-state';
+import { SceneHudBridge } from '@/components/scene/SceneHudBridge';
+import { COLORS } from '@/lib/visual-theme';
 
 // ═══════════════════════════════════════════════════════════════
-// J.A.R.V.I.S. — the Iron Man HUD.
-// No chat column. No sidebar. No sessions.
-// One reticle orb center-stage. Holographic telemetry flanks it.
-// Exchanges are ephemeral: the last exchange lives in the HUD, all
-// history lives in Working Notes (the housekeeping log). Voice-first;
-// the composer is a HUD command line, not a chat box.
+// J.A.R.V.I.S. V2 — the spatial operating environment.
+// One persistent 3D world. Modules are operational states of the same
+// machine: opening Recon/CAD/System transforms the world — camera,
+// lighting, particles, grid — it is never a page swap.
 // ═══════════════════════════════════════════════════════════════
 
 export default function JarvisPage() {
@@ -42,6 +43,8 @@ function JarvisShell() {
     handsFreeStatus, toggleHandsFree, interruptSpeaking, activeAgents,
     workingNotes, refreshNotes, taskLedger, contextMeter, lastModels,
   } = assistant;
+
+  const worldWs = useWorldState();
 
   const [mounted, setMounted] = useState(false);
   const [booting, setBooting] = useState(true);
@@ -73,6 +76,18 @@ function JarvisShell() {
     window.addEventListener('jarvis:open-cad', open);
     return () => window.removeEventListener('jarvis:open-cad', open);
   }, []);
+
+  // The world follows the module layer: only one module open at a time.
+  // Closing a module returns ownership to home.
+  useEffect(() => {
+    if (reconOpen) worldState.setModule('recon');
+    else if (studioOpen) worldState.setModule('cad');
+    else if (memoryOpen) worldState.setModule('memory');
+    else if (dashboardOpen) worldState.setModule('system');
+    else if (computerOpen) worldState.setModule('computer');
+    else if (settingsOpen) worldState.setModule('settings');
+    else worldState.setModule('home');
+  }, [reconOpen, studioOpen, memoryOpen, dashboardOpen, computerOpen, settingsOpen]);
 
   useEffect(() => {
     const update = () => {
@@ -145,7 +160,8 @@ function JarvisShell() {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? 'Working late, sir?' : hour < 12 ? 'Good morning, sir' : hour < 17 ? 'Good afternoon, sir' : hour < 22 ? 'Good evening, sir' : 'Working late, sir?';
 
-  const meterColor = contextMeter.zone === 'critical' ? '#fda4af' : contextMeter.zone === 'elevated' ? '#fbbf24' : 'rgba(255,250,240,0.35)';
+  const meterColor = contextMeter.zone === 'critical' ? COLORS.error
+    : contextMeter.zone === 'elevated' ? COLORS.warning : 'rgba(232,237,242,0.35)';
 
   const send = () => {
     const t = inputText.trim();
@@ -156,18 +172,23 @@ function JarvisShell() {
 
   return (
     <div className="fixed inset-0" style={{ background: 'var(--bg)' }}>
+      {/* ═══ THE PERSISTENT WORLD (never unmounts) ═══ */}
+      <AICore state={state} micLevel={micLevel} activeAgents={activeAgents} />
+      {/* CSS environment layers in lockstep with the world */}
       <div className="grading" aria-hidden="true" />
       <div className="state-wash" data-mode={state} aria-hidden="true" />
+      <div className="scanfield" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
+      <SceneHudBridge />
 
       <AnimatePresence>
         {booting && <BootSequence onComplete={handleBootComplete} />}
       </AnimatePresence>
 
-      {/* ═══ TOP BAR — housekeeping mode + status + clock ═══ */}
+      {/* ═══ TOP BAR — module + state + clock ═══ */}
       <header className="hud-top">
         <div className="flex items-center gap-3">
-          <Mark3D kind="core" size={18} hue={20} speed={7} />
+          <Mark3D kind="core" size={18} hue={195} speed={7} />
           <span className="hud-brand">J.A.R.V.I.S.</span>
           <span className="hidden md:inline-flex items-center gap-2 h-6 px-2.5 rounded-full border" style={{ borderColor: 'var(--line)' }}>
             <span className={`status-dot ${stateDotClass(state)}`} style={{ color: stateDotColor(state) }} />
@@ -175,16 +196,16 @@ function JarvisShell() {
           </span>
         </div>
 
-        {/* Protocol readout — routing depth is automatic now */}
+        {/* Active environment readout */}
         <div className="hidden sm:flex items-center gap-2">
-          <span className="hud-text text-[9px]" style={{ color: 'var(--t3)' }}>[ MESH ROUTING ]</span>
-          <span className="hud-text text-[9px]" style={{ color: 'var(--accent)' }}>AUTO</span>
+          <span className="hud-text text-[9px]" style={{ color: 'var(--t3)' }}>[ ENV ]</span>
+          <span className="hud-text text-[9px]" style={{ color: 'var(--accent)' }}>{worldWs.toUpperCase()}</span>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="ctx-pill hidden md:inline-flex" title={`Cognition load: ${contextMeter.usedTokens.toLocaleString()} / ${contextMeter.totalTokens.toLocaleString()} tokens`}>
             <span className="hud-text text-[8px]">COG</span>
-            <div className="w-14 h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div className="w-14 h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(232,237,242,0.08)' }}>
               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(2, contextMeter.pct)}%`, background: meterColor }} />
             </div>
           </div>
@@ -198,29 +219,30 @@ function JarvisShell() {
         {error != null && (
           <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
             className="absolute top-16 left-1/2 -translate-x-1/2 z-[60] rounded-2xl px-4 py-3 max-w-md w-[92vw] md:w-auto backdrop-blur-xl border"
-            style={{ borderColor: 'rgba(253,164,175,0.3)', background: 'rgba(26,14,17,0.88)' }} role="alert">
+            style={{ borderColor: 'rgba(229,107,120,0.3)', background: 'rgba(28,13,16,0.88)' }} role="alert">
             <div className="flex items-start gap-3">
-              <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: 'var(--halo-error)' }} />
+              <span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: 'var(--status-error)' }} />
               <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-rose-100">{error.title}</div>
-                <div className="text-[12px] text-rose-100/55 mt-0.5">{error.message}</div>
+                <div className="text-[13px] font-medium" style={{ color: '#F6C9CE' }}>{error.title}</div>
+                <div className="text-[12px] mt-0.5" style={{ color: 'rgba(246,201,206,0.55)' }}>{error.message}</div>
               </div>
               {error.retry && (
                 <button onClick={() => { clearError(); error.retry!(); }}
-                  className="text-[12px] font-medium px-3 py-1.5 rounded-full border border-rose-300/25 text-rose-100 hover:bg-rose-300/10 transition-colors shrink-0">Retry</button>
+                  className="text-[12px] font-medium px-3 py-1.5 rounded-full border text-[#F6C9CE] hover:bg-rose-300/10 transition-colors shrink-0"
+                  style={{ borderColor: 'rgba(229,107,120,0.25)' }}>Retry</button>
               )}
-              <button onClick={clearError} aria-label="Dismiss" className="text-rose-200/50 hover:text-rose-100 text-[14px] leading-none mt-0.5">✕</button>
+              <button onClick={clearError} aria-label="Dismiss" className="text-[14px] leading-none mt-0.5" style={{ color: 'rgba(246,201,206,0.5)' }}>✕</button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ═══ STAGE — reticle orb flanked by holographic panels ═══ */}
+      {/* ═══ STAGE — the world is the stage; HUD flanks it ═══ */}
       <main className="hud-stage">
         {/* LEFT TELEMETRY */}
         <section className="hud-wing hud-wing-l" aria-label="System telemetry">
           <HudPanel eyebrow="CORE STATUS">
-            <div className="hud-kv"><span>Power</span><b style={{ color: '#7ce8b0' }}>NOMINAL</b></div>
+            <div className="hud-kv"><span>Power</span><b style={{ color: 'var(--status-success)' }}>NOMINAL</b></div>
             <div className="hud-kv"><span>Mesh</span><b>{lastModels.length > 0 ? `${lastModels.length} ONLINE` : 'STANDBY'}</b></div>
             <div className="hud-kv"><span>Agents</span><b>{activeAgents.primary.length || '—'}</b></div>
           </HudPanel>
@@ -231,7 +253,7 @@ function JarvisShell() {
             ) : recentNotes.map(n => (
               <div key={n.id} className="hud-note">
                 <span className="hud-note-dot" style={{
-                  background: n.kind === 'decision' ? '#c9b8fd' : n.kind === 'finding' ? '#7ce8b0' : 'var(--accent)',
+                  background: n.kind === 'decision' ? 'var(--halo-speak)' : n.kind === 'finding' ? 'var(--status-success)' : 'var(--accent)',
                 }} />
                 <span className="hud-note-text">{n.text}</span>
               </div>
@@ -240,30 +262,29 @@ function JarvisShell() {
           </HudPanel>
         </section>
 
-        {/* CENTER — the reticle orb */}
+        {/* CENTER — the core lives in the world behind */}
         <div className="hud-center">
           <div className="hud-reticle" data-busy={busy || undefined} aria-hidden="true">
             <svg viewBox="0 0 200 200" className="hud-reticle-svg">
-              <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(240,236,228,0.10)" strokeWidth="0.6" />
-              <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(240,236,228,0.06)" strokeWidth="0.5" strokeDasharray="2 6" />
+              <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(232,237,242,0.10)" strokeWidth="0.6" />
+              <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(232,237,242,0.06)" strokeWidth="0.5" strokeDasharray="2 6" />
               {Array.from({ length: 36 }, (_, i) => i * 10).map(deg => (
                 <line key={deg}
                   x1={100 + 92 * Math.cos((deg * Math.PI) / 180)}
                   y1={100 + 92 * Math.sin((deg * Math.PI) / 180)}
                   x2={100 + 96 * Math.cos((deg * Math.PI) / 180)}
                   y2={100 + 96 * Math.sin((deg * Math.PI) / 180)}
-                  stroke="rgba(240,236,228,0.16)" strokeWidth="0.7" />
+                  stroke="rgba(232,237,242,0.16)" strokeWidth="0.7" />
               ))}
-              {/* corner brackets */}
               <path d="M 30 52 L 30 30 L 52 30" fill="none" stroke="var(--accent-line)" strokeWidth="1" />
               <path d="M 148 30 L 170 30 L 170 52" fill="none" stroke="var(--accent-line)" strokeWidth="1" />
               <path d="M 170 148 L 170 170 L 148 170" fill="none" stroke="var(--accent-line)" strokeWidth="1" />
               <path d="M 52 170 L 30 170 L 30 148" fill="none" stroke="var(--accent-line)" strokeWidth="1" />
             </svg>
           </div>
-          <div className="relative w-[min(66vw,430px)] h-[min(66vw,430px)] flex items-center justify-center">
-            <AICore className="absolute inset-0" state={state} micLevel={micLevel} activeAgents={activeAgents} />
-          </div>
+
+          {/* spacer preserving the orb's stage space — the orb itself is 3D behind */}
+          <div className="relative w-[min(66vw,430px)] h-[min(66vw,430px)] flex items-center justify-center" />
 
           {/* Exchange readout — ephemeral, below the orb */}
           <div className="hud-exchange">
@@ -276,7 +297,7 @@ function JarvisShell() {
                   {taskLedger.map(s => (
                     <div key={s.id} className="hud-ledger-row">
                       <span className="hud-ledger-dot" style={{
-                        background: s.status === 'done' ? '#7ce8b0' : s.status === 'failed' ? '#fda4af' : s.status === 'running' ? 'var(--accent)' : 'transparent',
+                        background: s.status === 'done' ? 'var(--status-success)' : s.status === 'failed' ? 'var(--status-error)' : s.status === 'running' ? 'var(--accent)' : 'transparent',
                         borderColor: s.status === 'pending' ? 'var(--line)' : 'transparent',
                       }}>
                         {s.status === 'done' && '✓'}
@@ -326,7 +347,7 @@ function JarvisShell() {
               return (
                 <div key={i} className="wave-bar flex-1" style={{
                   height: `${Math.max(2, h * 100)}%`, minWidth: '2px',
-                  background: active ? 'rgba(255,250,240,0.55)' : 'rgba(255,250,240,0.14)',
+                  background: active ? 'rgba(159,232,255,0.55)' : 'rgba(232,237,242,0.14)',
                 }} />
               );
             })}
@@ -352,7 +373,7 @@ function JarvisShell() {
                     {taskLedger.map(s => (
                       <div key={s.id} className="hud-ledger-row text-[11px]">
                         <span className="hud-ledger-dot" style={{
-                          background: s.status === 'done' ? '#7ce8b0' : s.status === 'running' ? 'var(--accent)' : 'transparent',
+                          background: s.status === 'done' ? 'var(--status-success)' : s.status === 'running' ? 'var(--accent)' : 'transparent',
                           borderColor: s.status === 'pending' ? 'var(--line)' : 'transparent',
                         }}>{s.status === 'done' && '✓'}</span>
                         <span style={{ color: s.status === 'pending' ? 'var(--t3)' : 'var(--t1)' }}>{s.label}</span>
@@ -368,12 +389,12 @@ function JarvisShell() {
 
           <HudPanel eyebrow="MODULES">
             <div className="hud-modules">
-              <ModuleBtn label="COMPUTER USE" onClick={() => setComputerOpen(true)} hue={203} />
-              <ModuleBtn label="RECON" onClick={() => setReconOpen(true)} hue={158} />
-              <ModuleBtn label="BUILD" onClick={() => setStudioOpen(true)} hue={20} />
-              <ModuleBtn label="DASHBOARD" onClick={() => setDashboardOpen(true)} hue={265} />
-              <ModuleBtn label="MEMORY" onClick={() => setMemoryOpen(true)} hue={203} />
-              <ModuleBtn label="SETTINGS" onClick={() => setSettingsOpen(true)} hue={20} />
+              <ModuleBtn label="COMPUTER" active={computerOpen} onClick={() => setComputerOpen(v => !v)} />
+              <ModuleBtn label="RECON" active={reconOpen} onClick={() => setReconOpen(v => !v)} />
+              <ModuleBtn label="BUILD" active={studioOpen} onClick={() => setStudioOpen(v => !v)} />
+              <ModuleBtn label="DASHBOARD" active={dashboardOpen} onClick={() => setDashboardOpen(v => !v)} />
+              <ModuleBtn label="MEMORY" active={memoryOpen} onClick={() => setMemoryOpen(v => !v)} />
+              <ModuleBtn label="SETTINGS" active={settingsOpen} onClick={() => setSettingsOpen(v => !v)} />
             </div>
           </HudPanel>
         </section>
@@ -408,13 +429,13 @@ function JarvisShell() {
         </button>
       </footer>
 
-      {/* ═══ FULL LOG DRAWER (replaces chat history UI) ═══ */}
+      {/* ═══ FULL LOG DRAWER ═══ */}
       <AnimatePresence>
         {logOpen && (
           <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 260 }}
             className="absolute right-0 top-0 h-full w-[400px] max-w-[92vw] flex flex-col z-50 border-l"
-            style={{ borderColor: 'var(--line)', background: 'rgba(13,13,16,0.92)', backdropFilter: 'blur(32px)' }}>
+            style={{ borderColor: 'var(--line)', background: 'rgba(8,12,17,0.92)', backdropFilter: 'blur(32px)' }}>
             <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--line)' }}>
               <div>
                 <div className="text-[15px] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>Housekeeping Log</div>
@@ -433,7 +454,7 @@ function JarvisShell() {
                     <span className="text-[8.5px] tracking-[0.18em] font-semibold px-1.5 py-0.5 rounded-full border"
                       style={{
                         borderColor: 'var(--line)',
-                        color: n.kind === 'decision' ? '#c9b8fd' : n.kind === 'finding' ? '#7ce8b0' : 'var(--t3)',
+                        color: n.kind === 'decision' ? 'var(--halo-speak)' : n.kind === 'finding' ? 'var(--status-success)' : 'var(--t3)',
                       }}>{n.kind.toUpperCase()}</span>
                     <span className="text-[9.5px]" style={{ color: 'var(--t3)' }}>
                       {new Date(n.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -447,7 +468,7 @@ function JarvisShell() {
         )}
       </AnimatePresence>
 
-      {/* Panels */}
+      {/* Panels — module workspaces over the world */}
       <AutoRecon isOpen={reconOpen} onClose={() => setReconOpen(false)} />
       <BuildStudio isOpen={studioOpen} onClose={() => setStudioOpen(false)} />
       <MemoryPanel isOpen={memoryOpen} onClose={() => setMemoryOpen(false)} />
@@ -470,10 +491,10 @@ function HudPanel({ eyebrow, children }: { eyebrow: string; children: React.Reac
   );
 }
 
-function ModuleBtn({ label, onClick, hue }: { label: string; onClick: () => void; hue: number }) {
+function ModuleBtn({ label, onClick, active }: { label: string; onClick: () => void; active?: boolean }) {
   return (
-    <button className="hud-module" onClick={onClick}>
-      <Mark3D kind="prism" size={13} hue={hue} speed={11} />
+    <button className="hud-module" onClick={onClick} data-on={active || undefined} aria-pressed={active}>
+      <Mark3D kind="prism" size={13} hue={195} speed={11} />
       <span>{label}</span>
     </button>
   );
@@ -500,28 +521,28 @@ function SendGlyph() {
   );
 }
 
-// ── State → dot ──────────────────────────────────────────────
+// ── State → dot (semantic palette) ───────────────────────────
 
 function stateDotClass(state: AssistantState): string {
   switch (state) {
-    case 'listening': return 'bg-teal-300';
-    case 'processing': case 'thinking': case 'planning': return 'bg-amber-300';
-    case 'executing': return 'bg-violet-300';
-    case 'speaking': return 'bg-violet-300';
-    case 'success': return 'bg-emerald-300';
-    case 'error': return 'bg-rose-300';
-    default: return 'bg-white/40';
+    case 'listening': return '';
+    case 'processing': case 'thinking': case 'planning': return '';
+    case 'executing': return '';
+    case 'speaking': return '';
+    case 'success': return '';
+    case 'error': return '';
+    default: return '';
   }
 }
 
 function stateDotColor(state: AssistantState): string {
   switch (state) {
-    case 'listening': return '#7ff0d4';
-    case 'processing': case 'thinking': case 'planning': return '#fbbf24';
-    case 'executing': return '#c9b8fd';
-    case 'speaking': return '#c9b8fd';
-    case 'success': return '#7ce8b0';
-    case 'error': return '#fda4af';
-    default: return 'rgba(255,255,255,0.4)';
+    case 'listening': return '#78DFFF';
+    case 'processing': case 'thinking': case 'planning': return '#28B8D9';
+    case 'executing': return '#B7A9F5';
+    case 'speaking': return '#B7A9F5';
+    case 'success': return '#63D6A0';
+    case 'error': return '#E56B78';
+    default: return 'rgba(232,237,242,0.4)';
   }
 }

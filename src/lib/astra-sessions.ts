@@ -79,10 +79,11 @@ export function messagesToAstraSession(
   entries: ChatEntryLike[],
   context: AstraSession['context'],
 ): AstraSession {
+  const now = new Date().toISOString();
   return {
     ...partial,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     entries,
     context,
   };

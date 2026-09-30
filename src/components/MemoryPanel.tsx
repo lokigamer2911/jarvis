@@ -18,6 +18,7 @@ import {
   getMemoryStats,
   Memory,
 } from '@/lib/memory';
+import { memoryGraphData$ } from '@/lib/memory-bridge';
 
 type MemoryType = Memory['type'];
 type SortBy = 'recency' | 'importance';
@@ -60,6 +61,7 @@ export default function MemoryPanel({ isOpen, onClose }: MemoryPanelProps) {
       ? searchMemories(query)
       : getMemories(undefined, typeFilter === 'all' ? undefined : typeFilter, 200);
     setMemories(results);
+    memoryGraphData$.set(results); // → spatial knowledge graph updates
   }, [isOpen, query, typeFilter]);
 
   useEffect(() => {

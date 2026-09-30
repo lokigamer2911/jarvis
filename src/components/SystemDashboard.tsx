@@ -10,39 +10,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-interface SystemMetrics {
-  cpu: {
-    cores: number;
-    usage: number | null; // percentage, null if unavailable
-    model: string;
-  };
-  memory: {
-    usedMB: number;
-    totalMB: number;
-    limitMB: number;
-    usagePercent: number;
-  };
-  network: {
-    online: boolean;
-    downlink: number | null; // Mbps, null if unavailable
-    effectiveType: string;
-    rtt: number | null; // ms
-  };
-  disk: {
-    usedGB: number;
-    totalGB: number;
-    usagePercent: number;
-  } | null; // null if unavailable
-  gpu: {
-    model: string;
-    vendor: string;
-  } | null;
-  session: {
-    uptime: number; // seconds
-    pageLoadTime: number; // ms
-  };
-}
+import { systemMetrics$ } from '@/lib/module-store';
+import type { SystemMetrics } from './SystemDashboard-types';
 
 interface SystemDashboardProps {
   isOpen: boolean;
@@ -166,6 +135,7 @@ export default function SystemDashboard({ isOpen, onClose }: SystemDashboardProp
     const newMetrics = await collectMetrics();
     setMetrics(newMetrics);
     setHistory(prev => [...prev.slice(-59), newMetrics]); // Keep last 60 samples
+    systemMetrics$.set(newMetrics); // → spatial rings react to REAL data
   }, [collectMetrics]);
 
   // Start/stop refresh

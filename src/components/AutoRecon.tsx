@@ -2,9 +2,13 @@
 
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { reconResult$, reconScanning$, reconPhase$ } from '@/lib/module-store';
+import type { ReconResult } from './AutoRecon-types';
 
 // ═══════════════════════════════════════════════════════════════
-// Auto-Recon UI — Iron Man HUD Style
+// Auto-Recon — HUD companion to the spatial Recon world.
+// All scan state is mirrored into module stores so the persistent
+// 3D environment materializes the intelligence graph in sync.
 // ═══════════════════════════════════════════════════════════════
 
 interface ReconFinding {
@@ -16,32 +20,7 @@ interface ReconFinding {
   command?: string;
 }
 
-interface ReconPhase {
-  id: string;
-  name: string;
-  status: 'pending' | 'running' | 'complete' | 'error';
-  results: ReconFinding[];
-  commands: string[];
-  duration?: number;
-}
 
-interface ReconResult {
-  target: string;
-  startTime: number;
-  endTime?: number;
-  phases: ReconPhase[];
-  summary: {
-    totalFindings: number;
-    critical: number;
-    high: number;
-    medium: number;
-    low: number;
-    info: number;
-    subdomains: number;
-    openPorts: number;
-    technologies: string[];
-  };
-}
 
 const SEVERITY_CLASSES: Record<string, string> = {
   critical: 'text-red-400 border-red-500/20 bg-red-500/5',
@@ -147,6 +126,12 @@ function buildAllInOneReport(data: any, result: any): string {
   return report;
 }
 
+/** Mirrors the live phase label into the world's scan-ring choreography. */
+function PhaseMirror({ phase }: { phase: string }) {
+  reconPhase$.set(phase);
+  return <span className="dialog-sub">{phase}</span>;
+}
+
 interface AutoReconProps {
   isOpen: boolean;
   onClose: () => void;
@@ -170,6 +155,10 @@ export default function AutoRecon({ isOpen, onClose }: AutoReconProps) {
     setResult(null);
     setError('');
     setCurrentPhase('Initializing...');
+    // World sync: scanning ring + phase choreography in the 3D environment
+    reconResult$.set(null);
+    reconScanning$.set(true);
+    reconPhase$.set('Initializing...');
     try {
       const res = await fetch('/api/recon', {
         method: 'POST',
@@ -182,8 +171,11 @@ export default function AutoRecon({ isOpen, onClose }: AutoReconProps) {
       }
       const data: ReconResult = await res.json();
       setResult(data);
+      reconResult$.set(data);          // → 3D node graph materializes
+      reconScanning$.set(false);       // → scan ring collapses
     } catch (err: any) {
       setError(err.message || 'Recon failed');
+      reconScanning$.set(false);
     } finally {
       setScanning(false);
       setCurrentPhase('');
@@ -229,7 +221,7 @@ export default function AutoRecon({ isOpen, onClose }: AutoReconProps) {
               {scanning && (
                 <div className="mt-1.5 flex items-center gap-2">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--accent)' }} />
-                  <span className="dialog-sub">{currentPhase}</span>
+                  <PhaseMirror phase={currentPhase} />
                 </div>
               )}
             </div>
